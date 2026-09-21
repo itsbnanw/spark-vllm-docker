@@ -120,6 +120,9 @@ Common optional fields are `description`, `model`, `mods`, `build_args`,
   commands. The runner and `launch-cluster.sh` supply them automatically.
 - Do not make both `cluster_only` and `solo_only` true.
 - Prefer `vllm-node` unless a documented alternate build is required.
+- The solo Heretic GGUF recipe uses `llama-node` because this exact GGUF needs
+  the llama.cpp runtime; its `model_file` field selects one file rather than
+  downloading the whole Hugging Face repository.
 - Update recipe documentation and `tests/expected_commands.sh` when a documented
   command changes.
 - Do not edit `recipes/backups/` unless the task specifically targets archived

@@ -1,0 +1,22 @@
+FROM nvidia/cuda:13.0.2-devel-ubuntu24.04
+
+ARG LLAMA_CPP_REF=b11069
+ARG BUILD_JOBS=16
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch "$LLAMA_CPP_REF" \
+      https://github.com/ggml-org/llama.cpp.git /opt/llama.cpp && \
+    cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
+      -DGGML_CUDA=ON \
+      -DGGML_NATIVE=OFF \
+      -DCMAKE_CUDA_ARCHITECTURES=121 \
+      -DLLAMA_BUILD_SERVER=ON \
+      -DLLAMA_BUILD_TESTS=OFF \
+      -DLLAMA_CURL=OFF && \
+    cmake --build /opt/llama.cpp/build --target llama-server -j "$BUILD_JOBS"
+
+ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
+WORKDIR /workspace

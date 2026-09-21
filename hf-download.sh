@@ -9,11 +9,16 @@ SSH_USER="$USER"
 PARALLEL_COPY=false
 CONFIG_FILE=""
 CONFIG_FILE_SET=false
+MODEL_FILE=""
+FORCE_DOWNLOAD=false
+COPY_PARENT="$HUB_PATH"
 
 # Help function
 usage() {
     echo "Usage: $0 [OPTIONS] <model-name>"
     echo "  <model-name>                : HuggingFace model name (e.g., 'QuantTrio/MiniMax-M2-AWQ')"
+    echo "  --file <filename>           : Download only this file into the mounted selected-models directory"
+    echo "  --force-download            : Refresh the selected file even if it is cached"
     echo "  -c, --copy-to [hosts]       : Copy the model. Omit hosts to use COPY_HOSTS from .env or autodiscovery."
     echo "      --copy-to-host          : Alias for --copy-to (backwards compatibility)."
     echo "      --copy-parallel         : With -c, copy to all resolved hosts concurrently."
@@ -45,7 +50,7 @@ copy_model_to_host() {
     local host_copy_start host_copy_end host_copy_time
     host_copy_start=$(date +%s)
 
-    if rsync -av --mkpath --progress "$model_dir" "${SSH_USER}@${host}:$HUB_PATH/"; then
+    if rsync -av --mkpath --progress "$model_dir" "${SSH_USER}@${host}:$COPY_PARENT/"; then
         host_copy_end=$(date +%s)
         host_copy_time=$((host_copy_end - host_copy_start))
         printf "Copy to %s completed in %02d:%02d:%02d\n" "$host" $((host_copy_time/3600)) $((host_copy_time%3600/60)) $((host_copy_time%60))
@@ -70,6 +75,15 @@ while [[ "$#" -gt 0 ]]; do
             continue
             ;;
         --copy-parallel) PARALLEL_COPY=true ;;
+        --file)
+            if [ -z "${2:-}" ] || [[ "$2" == -* ]]; then
+                echo "Error: --file requires a filename." >&2
+                exit 1
+            fi
+            MODEL_FILE="$2"
+            shift
+            ;;
+        --force-download) FORCE_DOWNLOAD=true ;;
         -u|--user) SSH_USER="$2"; shift ;;
         --config) CONFIG_FILE="$2"; CONFIG_FILE_SET=true; shift ;;
         -h|--help) usage ;;
@@ -96,6 +110,18 @@ source "$(dirname "$0")/autodiscover.sh"
 if [ -z "${MODEL_NAME:-}" ]; then
     echo "Error: Model name is required."
     usage
+fi
+
+if [ -n "$MODEL_FILE" ]; then
+    if [[ ! "$MODEL_NAME" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || \
+       [[ "$MODEL_FILE" == */* || "$MODEL_FILE" == "." || "$MODEL_FILE" == ".." ]]; then
+        echo "Error: --file requires a Hugging Face org/model ID and a single filename." >&2
+        exit 1
+    fi
+fi
+if [ "$FORCE_DOWNLOAD" = true ] && [ -z "$MODEL_FILE" ]; then
+    echo "Error: --force-download requires --file." >&2
+    exit 1
 fi
 
 # Resolve COPY_HOSTS if --copy-to was given without hosts, or use .env
@@ -145,7 +171,17 @@ START_TIME=$(date +%s)
 # Download model
 echo "Downloading model '$MODEL_NAME' using uvx..."
 DOWNLOAD_START=$(date +%s)
-if uvx hf download "$MODEL_NAME"; then
+if [ -n "$MODEL_FILE" ]; then
+    MODEL_DIR="${HF_HOME:-$HOME/.cache/huggingface}/selected-models/$MODEL_NAME"
+    COPY_PARENT="${HF_HOME:-$HOME/.cache/huggingface}/selected-models/${MODEL_NAME%%/*}"
+    DOWNLOAD_CMD=(uvx hf download "$MODEL_NAME" "$MODEL_FILE" --local-dir "$MODEL_DIR")
+    if [ "$FORCE_DOWNLOAD" = true ]; then
+        DOWNLOAD_CMD+=(--force-download)
+    fi
+else
+    DOWNLOAD_CMD=(uvx hf download "$MODEL_NAME")
+fi
+if "${DOWNLOAD_CMD[@]}"; then
     DOWNLOAD_END=$(date +%s)
     DOWNLOAD_TIME=$((DOWNLOAD_END - DOWNLOAD_START))
     printf "Download completed in %02d:%02d:%02d\n" $((DOWNLOAD_TIME/3600)) $((DOWNLOAD_TIME%3600/60)) $((DOWNLOAD_TIME%60))
@@ -154,35 +190,35 @@ else
     exit 1
 fi
 
-# Determine model directory path
-# uvx hf download stores models in ~/.cache/huggingface/hub with the pattern: models--<org>--<model>-<suffix>
-MODEL_DIR=""
+# Whole-repository downloads use the Hugging Face hub cache. Exact-file
+# downloads already have a deterministic selected-models directory.
+if [ -z "$MODEL_FILE" ]; then
+    MODEL_DIR=""
 
-# Try to find the model directory
-# The pattern for model directories is: ~/.cache/huggingface/hub/models--ORG--MODEL-VARIATION (or similar)
-# Model names like "QuantTrio/MiniMax-M2-AWQ" become "models--QuantTrio--MiniMax-M2-AQW" or similar
-
-# Parse org and model name from MODEL_NAME
-if [[ "$MODEL_NAME" == */* ]]; then
-    ORG="${MODEL_NAME%%/*}"
-    MODEL="${MODEL_NAME##*/}"
-else
-    ORG=""
-    MODEL="$MODEL_NAME"
-fi
-
-# Convert to the directory pattern used by HuggingFace
-
-if [ -d "$HUB_PATH" ]; then
-    if [ -n "$ORG" ]; then
-        MODEL_DIR="$HUB_PATH/models--${ORG}--${MODEL}"
+    if [[ "$MODEL_NAME" == */* ]]; then
+        ORG="${MODEL_NAME%%/*}"
+        MODEL="${MODEL_NAME##*/}"
     else
-        # For models without org, check both patterns
-        if [ -d "$HUB_PATH/models--${MODEL}" ]; then
-            MODEL_DIR="$HUB_PATH/models--${MODEL}"
+        ORG=""
+        MODEL="$MODEL_NAME"
+    fi
+
+    if [ -d "$HUB_PATH" ]; then
+        if [ -n "$ORG" ]; then
+            MODEL_DIR="$HUB_PATH/models--${ORG}--${MODEL}"
         else
-            MODEL_DIR="$HUB_PATH/${MODEL}"
+            # For models without org, check both patterns.
+            if [ -d "$HUB_PATH/models--${MODEL}" ]; then
+                MODEL_DIR="$HUB_PATH/models--${MODEL}"
+            else
+                MODEL_DIR="$HUB_PATH/${MODEL}"
+            fi
         fi
+    fi
+else
+    if [ ! -s "$MODEL_DIR/$MODEL_FILE" ]; then
+        echo "Error: Selected model file is missing or empty: $MODEL_DIR/$MODEL_FILE" >&2
+        exit 1
     fi
 fi
 

@@ -33,6 +33,7 @@ VLLM_SOURCE_COMMIT=""
 VLLM_SOURCE_STAGING_DIR=""
 VLLM_SOURCE_CONTEXT=""
 EXP_B12X=false
+LLAMA_CPP=false
 EXP_B12X_VLLM_REPO="https://github.com/local-inference-lab/vllm"
 EXP_B12X_VLLM_REF="dev/karmic-kraken"
 B12X_PACKAGE_REPO="https://github.com/lukealonso/b12x.git"
@@ -624,6 +625,7 @@ usage() {
     echo "  --tf5                         : Deprecated compatibility flag; tag defaults to 'vllm-node-tf5' (aliases: --pre-tf, --pre-transformers)"
     echo "  --exp-mxfp4, --experimental-mxfp4 : Build with experimental native MXFP4 support"
     echo "  --exp-b12x, --experimental-b12x   : Select B12X; pulls its prebuilt image unless a local wheel/image build is requested"
+    echo "  --llama-cpp                   : Build the solo CUDA llama.cpp image (default tag: llama-node)"
     echo "  --apply-vllm-pr <pr-or-url>   : Apply a vLLM PR number or full GitHub PR URL to source. Can be specified multiple times."
     echo "  --apply-preset-vllm-prs       : Apply preset vLLM PRs even with --vllm-repo, --vllm-ref, or --apply-vllm-pr."
     echo "  --apply-flashinfer-pr <pr-num>: Apply a specific PR patch to FlashInfer source. Can be specified multiple times."
@@ -735,6 +737,7 @@ while [[ "$#" -gt 0 ]]; do
         --tf5|--pre-tf|--pre-transformers) PRE_TRANSFORMERS=true ;;
         --exp-mxfp4|--experimental-mxfp4) EXP_MXFP4=true ;;
         --exp-b12x|--experimental-b12x) EXP_B12X=true ;;
+        --llama-cpp) LLAMA_CPP=true ;;
         --apply-vllm-pr)
             VLLM_PR_REFERENCE=""
             if [ -n "${2:-}" ]; then
@@ -786,6 +789,30 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
+
+if [ "$LLAMA_CPP" = true ]; then
+    if [ "$COPY_TO_FLAG" = true ] || [ "$NO_BUILD" = true ] || \
+       [ "$EXP_B12X" = true ] || [ "$EXP_MXFP4" = true ] || \
+       [ "$USE_WHEELS" = true ] || [ "$REBUILD_VLLM" = true ] || \
+       [ "$REBUILD_FLASHINFER" = true ]; then
+        echo "Error: --llama-cpp is a solo image build and cannot be combined with vLLM build or copy options." >&2
+        exit 1
+    fi
+    if [ "$IMAGE_TAG_SET" = false ]; then
+        IMAGE_TAG="llama-node"
+    fi
+    LLAMA_CMD=(docker build -t "$IMAGE_TAG" --build-arg "BUILD_JOBS=$BUILD_JOBS" -f Dockerfile.llama)
+    if [ "$FULL_LOG" = true ]; then
+        LLAMA_CMD+=(--progress=plain)
+    fi
+    if [ -n "$NETWORK_ARG" ]; then
+        LLAMA_CMD+=(--network "$NETWORK_ARG")
+    fi
+    LLAMA_CMD+=(.)
+    echo "Building llama.cpp image '$IMAGE_TAG'..."
+    "${LLAMA_CMD[@]}"
+    exit $?
+fi
 
 # The B12X preset uses the standard Dockerfile and source-build path, but owns
 # the fork/ref and Torch-family versions needed by that integration.

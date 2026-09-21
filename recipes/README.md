@@ -7,7 +7,7 @@ Recipes provide a **one-click solution** for deploying models with pre-configure
 - Required mods/patches
 - Default parameters (port, host, tensor parallelism, etc.)
 - Environment variables
-- The vLLM serve command
+- The server command
 
 ## Quick Start
 
@@ -28,6 +28,33 @@ Recipes provide a **one-click solution** for deploying models with pre-configure
 ./run-recipe.sh --discover
 ./run-recipe.sh minimax-m2-awq --setup
 ```
+
+### Heretic Qwen3.8 GGUF on one DGX Spark
+
+This recipe builds a CUDA-enabled llama.cpp image, downloads only
+`RVN-Q8_0-multilingual.gguf` (about 28.6 GB on disk), and starts an
+OpenAI-compatible text chat server. Run it on the Spark from the repository
+root:
+
+```bash
+./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --setup
+```
+
+After the server reports that loading is complete, use a second terminal:
+
+```bash
+curl --fail http://localhost:8000/health
+curl --fail http://localhost:8000/v1/models
+curl --fail http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3.8-27b-heretic-rvn-q8","messages":[{"role":"user","content":"Hello!"}]}'
+```
+
+The first command builds the `llama-node` image and downloads the selected
+GGUF. Later launches can omit `--setup`. The recipe runs on one Spark only;
+it does not download the vision projector or an MTP variant. The selected
+file is stored under `selected-models/` in the Hugging Face cache, which the
+launcher mounts into the container. `HF_HOME` controls the host cache root.
 
 ## Cluster Node Discovery
 
@@ -118,6 +145,8 @@ command: |
 # Optional fields
 description: What this recipe does
 model: org/model-name              # HuggingFace model ID for --setup downloads
+model_file: model.gguf             # Optional: download just this file into selected-models/
+container_name: my-container       # Optional: container name; --name overrides it
 cluster_only: false                # Set to true if model requires cluster mode
 build_args:                        # Extra args for build-and-copy.sh
   - --exp-mxfp4                    # e.g., for MXFP4 Dockerfile

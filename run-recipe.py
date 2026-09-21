@@ -185,9 +185,11 @@ def load_recipe(recipe_path: Path) -> dict[str, Any]:
             Used by run-recipe.py to determine which features are available.
             Current version: '1'. Bump when adding new recipe fields.
         container (str, required): Docker image tag to use (e.g., 'vllm-node-mxfp4')
-        command (str, required): vLLM serve command template with {placeholders}
+        command (str, required): Serve command template with {placeholders}
         description (str, optional): Brief description shown in --list
         model (str, optional): HuggingFace model ID for --setup downloads
+        model_file (str, optional): Exact single file to download from the model repository
+        container_name (str, optional): Container name for launches unless --name overrides it
         mods (list[str], optional): List of mod directories to apply (e.g., 'mods/fix-glm')
         defaults (dict, optional): Default values for command placeholders
         env (dict, optional): Environment variables to export before running
@@ -237,6 +239,8 @@ def load_recipe(recipe_path: Path) -> dict[str, Any]:
     # Set defaults for optional fields
     recipe.setdefault("description", "")
     recipe.setdefault("model", None)
+    recipe.setdefault("model_file", None)
+    recipe.setdefault("container_name", None)
     recipe.setdefault("mods", [])
     recipe.setdefault("defaults", {})
     recipe.setdefault("env", {})
@@ -399,7 +403,12 @@ def build_image(
     return result.returncode == 0
 
 
-def download_model(model: str, copy_to: list[str] | None = None) -> bool:
+def download_model(
+    model: str,
+    copy_to: list[str] | None = None,
+    model_file: str | None = None,
+    force_download: bool = False,
+) -> bool:
     """
     Download model from HuggingFace using hf-download.sh.
 
@@ -415,6 +424,8 @@ def download_model(model: str, copy_to: list[str] | None = None) -> bool:
     Args:
         model: HuggingFace model ID (e.g., 'Salyut1/GLM-4.7-NVFP4')
         copy_to: List of worker hostnames to copy model cache to
+        model_file: Optional exact filename to download
+        force_download: Refresh the exact file if set
 
     Returns:
         True if download (and copy) succeeded, False otherwise
@@ -424,6 +435,10 @@ def download_model(model: str, copy_to: list[str] | None = None) -> bool:
         return False
 
     cmd = [str(DOWNLOAD_SCRIPT), model]
+    if model_file:
+        cmd.extend(["--file", model_file])
+        if force_download:
+            cmd.append("--force-download")
     if copy_to:
         cmd.extend(["--copy-to", ",".join(copy_to), "--copy-parallel"])
 
@@ -435,14 +450,13 @@ def download_model(model: str, copy_to: list[str] | None = None) -> bool:
     return result.returncode == 0
 
 
-def check_model_exists(model: str) -> bool:
+def check_model_exists(model: str, model_file: str | None = None) -> bool:
     """
     Check if a model exists in the HuggingFace cache.
 
-    Checks the standard HF cache location for completed downloads.
+    Checks the standard HF cache or the exact-file download location.
 
     EXTENSIBILITY:
-    - To support custom cache locations: Add HF_HOME env var support
     - To verify model integrity: Check for complete snapshot with config.json
     - To support other model sources: Add URL/path prefix detection
 
@@ -452,6 +466,11 @@ def check_model_exists(model: str) -> bool:
     Returns:
         True if model appears to be fully downloaded, False otherwise
     """
+    if model_file:
+        hf_home = Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface")
+        selected_file = hf_home / "selected-models" / model / model_file
+        return selected_file.is_file() and selected_file.stat().st_size > 0
+
     # Convert model name to cache directory format
     # e.g., "Salyut1/GLM-4.7-NVFP4" -> "models--Salyut1--GLM-4.7-NVFP4"
     cache_name = f"models--{model.replace('/', '--')}"
@@ -1071,7 +1090,21 @@ Examples:
     # Determine container image
     container = args.container_override or recipe["container"]
     model = recipe.get("model")
+    model_file = recipe.get("model_file")
     build_args = recipe.get("build_args", [])
+    container_name = args.container_name or recipe.get("container_name")
+    if model_file is not None and not model:
+        print("Error: model_file requires model in the recipe.")
+        return 1
+    if model_file is not None and (
+        not isinstance(model_file, str)
+        or not model_file
+        or model_file in (".", "..")
+        or Path(model_file).name != model_file
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", model)
+    ):
+        print("Error: model_file requires a single filename and an org/model ID.")
+        return 1
 
     # Parse nodes - check command line first, then .env file, then autodiscover
     nodes = parse_nodes(args.nodes) if not args.solo else []
@@ -1182,6 +1215,8 @@ Examples:
             print(f"Build args: {' '.join(build_args)}")
         if model:
             print(f"Model: {model}")
+            if model_file:
+                print(f"Model file: {model_file}")
         if cluster_only:
             print("Cluster only: Yes (model too large for single node)")
         if solo_only:
@@ -1203,8 +1238,8 @@ Examples:
             print(
                 f"InfiniBand interface: {ib_if}{' (from .env)' if not args.ib_if else ''}"
             )
-        if args.container_name:
-            print(f"Container name: {args.container_name}")
+        if container_name:
+            print(f"Container name: {container_name}")
         if args.non_privileged:
             print("Non-privileged mode: Yes")
         if cli_vllm_prs:
@@ -1256,20 +1291,20 @@ Examples:
     # --- Download Phase ---
     if model and (args.download_only or args.setup or args.force_download):
         if args.dry_run:
-            model_exists = check_model_exists(model)
+            model_exists = check_model_exists(model, model_file)
             if args.force_download or not model_exists:
-                print(f"Would download model: {model}")
+                print(f"Would download model: {model}{' / ' + model_file if model_file else ''}")
                 if copy_targets:
                     print(f"  Would copy to: {', '.join(copy_targets)}")
             else:
                 print(f"Model '{model}' already exists in cache.")
             print()
         else:
-            model_exists = check_model_exists(model)
+            model_exists = check_model_exists(model, model_file)
 
             if args.force_download or not model_exists:
                 print("=== Downloading Model ===")
-                if not download_model(model, copy_targets):
+                if not download_model(model, copy_targets, model_file, args.force_download):
                     print("Error: Failed to download model")
                     return 1
                 print()
@@ -1390,8 +1425,8 @@ Examples:
             cmd_parts.extend(["-v", volume_mapping])
         if args.master_port:
             cmd_parts.extend(["--master-port", str(args.master_port)])
-        if args.container_name:
-            cmd_parts.extend(["--name", args.container_name])
+        if container_name:
+            cmd_parts.extend(["--name", container_name])
         if eth_if:
             cmd_parts.extend(["--eth-if", eth_if])
         if ib_if:
@@ -1484,8 +1519,8 @@ Examples:
 
         if args.master_port:
             cmd.extend(["--master-port", str(args.master_port)])
-        if args.container_name:
-            cmd.extend(["--name", args.container_name])
+        if container_name:
+            cmd.extend(["--name", container_name])
         if eth_if:
             cmd.extend(["--eth-if", eth_if])
         if ib_if:

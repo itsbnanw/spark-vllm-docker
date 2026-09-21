@@ -1,0 +1,31 @@
+recipe_version: "1"
+name: Qwen3.8-27B-Heretic-RVN-Q8-GGUF
+description: Text chat on one DGX Spark with the RVN Q8_0 multilingual GGUF
+
+model: 0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF
+model_file: RVN-Q8_0-multilingual.gguf
+container: llama-node
+container_name: llama_node
+build_args:
+  - --llama-cpp
+solo_only: true
+
+defaults:
+  host: 0.0.0.0
+  port: 8000
+  max_model_len: 32768
+
+command: |
+  MODEL_PATH=/root/.cache/huggingface/selected-models/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/RVN-Q8_0-multilingual.gguf
+  if [ ! -s "$MODEL_PATH" ]; then
+    echo "Model file missing: $MODEL_PATH. Run this recipe with --setup first." >&2
+    exit 1
+  fi
+  exec llama-server \
+    --model "$MODEL_PATH" \
+    --alias qwen3.8-27b-heretic-rvn-q8 \
+    --host {host} \
+    --port {port} \
+    --ctx-size {max_model_len} \
+    --n-gpu-layers 99 \
+    --parallel 1
