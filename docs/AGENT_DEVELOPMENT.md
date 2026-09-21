@@ -108,6 +108,8 @@ command: |
 
 Common optional fields are `description`, `model`, `mods`, `build_args`,
 `defaults`, `env`, `cluster_only`, and `solo_only`.
+Use `recipe_version: "2"` when adding `model_file` or `container_name`;
+version 1 remains valid for older recipes.
 
 - Put general recipes in `recipes/<name>.yaml`; reserve directories such as
   `3x-spark-cluster/`, `4x-spark-cluster/`, and `8x-spark-cluster/` for recipes

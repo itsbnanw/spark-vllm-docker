@@ -1,4 +1,4 @@
-recipe_version: "1"
+recipe_version: "2"
 name: Qwen3.8-27B-Heretic-RVN-Q8-GGUF
 description: Text chat on one DGX Spark with the RVN Q8_0 multilingual GGUF
 
@@ -16,7 +16,7 @@ defaults:
   max_model_len: 32768
 
 command: |
-  MODEL_PATH=/root/.cache/huggingface/selected-models/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/RVN-Q8_0-multilingual.gguf
+  MODEL_PATH={model_path}
   if [ ! -s "$MODEL_PATH" ]; then
     echo "Model file missing: $MODEL_PATH. Run this recipe with --setup first." >&2
     exit 1

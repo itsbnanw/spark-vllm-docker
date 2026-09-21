@@ -63,6 +63,8 @@ RECIPE YAML SCHEMA:
     command: str           # Required: vLLM serve command with {placeholders}
     description: str       # Optional: Brief description
     model: str             # Optional: HuggingFace model ID for --setup
+    model_file: str        # Optional (v2): exact file to download
+    container_name: str    # Optional (v2): launch container name
     mods: list[str]        # Optional: Mod directories to apply
     defaults: dict         # Optional: Default values for command placeholders
     env: dict              # Optional: Environment variables
@@ -71,7 +73,8 @@ RECIPE YAML SCHEMA:
     solo_only: bool        # Optional: Require solo mode (default: false)
 
 RECIPE VERSION HISTORY:
-    Version 1 (default): Initial schema with all fields above supported.
+    Version 1 (default): Initial schema.
+    Version 2: Adds model_file and container_name.
 
 RELATED FILES:
     - run-recipe.sh: Bash wrapper that ensures Python deps are installed
@@ -183,7 +186,7 @@ def load_recipe(recipe_path: Path) -> dict[str, Any]:
         name (str, required): Human-readable name for the recipe
         recipe_version (str, required): Schema version for compatibility checking.
             Used by run-recipe.py to determine which features are available.
-            Current version: '1'. Bump when adding new recipe fields.
+            Current version: '2'. Bump when adding new recipe fields.
         container (str, required): Docker image tag to use (e.g., 'vllm-node-mxfp4')
         command (str, required): Serve command template with {placeholders}
         description (str, optional): Brief description shown in --list
@@ -250,13 +253,16 @@ def load_recipe(recipe_path: Path) -> dict[str, Any]:
     # Validate recipe version compatibility
     # EXTENSIBILITY: When adding new schema versions, update SUPPORTED_VERSIONS
     # and add migration/compatibility logic below
-    SUPPORTED_VERSIONS = ["1"]
+    SUPPORTED_VERSIONS = ["1", "2"]
     recipe_ver = str(recipe["recipe_version"])
     if recipe_ver not in SUPPORTED_VERSIONS:
         print(
             f"Warning: Recipe uses schema version '{recipe_ver}', but this run-recipe.py supports: {SUPPORTED_VERSIONS}"
         )
         print("Some features may not work correctly. Consider updating run-recipe.py.")
+    if recipe_ver == "1" and (recipe["model_file"] or recipe["container_name"]):
+        print("Error: model_file and container_name require recipe_version '2'.")
+        sys.exit(1)
 
     return recipe
 
@@ -469,7 +475,15 @@ def check_model_exists(model: str, model_file: str | None = None) -> bool:
     if model_file:
         hf_home = Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface")
         selected_file = hf_home / "selected-models" / model / model_file
-        return selected_file.is_file() and selected_file.stat().st_size > 0
+        complete_marker = selected_file.with_name(f".{model_file}.complete")
+        if not selected_file.is_file() or not complete_marker.is_file():
+            return False
+        try:
+            return selected_file.stat().st_size > 0 and selected_file.stat().st_size == int(
+                complete_marker.read_text().strip()
+            )
+        except (OSError, ValueError):
+            return False
 
     # Convert model name to cache directory format
     # e.g., "Salyut1/GLM-4.7-NVFP4" -> "models--Salyut1--GLM-4.7-NVFP4"
@@ -539,6 +553,10 @@ def generate_launch_script(
     """
     # Merge defaults with overrides
     params = {**recipe.get("defaults", {}), **overrides}
+    if recipe.get("model_file"):
+        params["model_path"] = shlex.quote(
+            f"/root/.cache/huggingface/selected-models/{recipe['model']}/{recipe['model_file']}"
+        )
 
     # Build the script
     lines = ["#!/bin/bash", f"# Generated from recipe: {recipe['name']}", ""]

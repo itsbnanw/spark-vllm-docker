@@ -39,6 +39,7 @@ DRY_RUN="$(./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --setup --dry-
 [[ "$DRY_RUN" == *"--name llama_node"* ]]
 [[ "$DRY_RUN" == *"Would download model: 0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF / RVN-Q8_0-multilingual.gguf"* ]]
 [[ "$DRY_RUN" == *"exec llama-server"* ]]
+[[ "$DRY_RUN" == *"MODEL_PATH=/root/.cache/huggingface/selected-models/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/RVN-Q8_0-multilingual.gguf"* ]]
 [[ "$DRY_RUN" == *"--ctx-size 32768"* ]]
 [[ "$DRY_RUN" == *"--n-gpu-layers 99"* ]]
 
@@ -56,6 +57,8 @@ fi
 }
 grep -q '^uvx hf download 0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF RVN-Q8_0-multilingual.gguf --local-dir ' "$TEST_LOG"
 test -s "$HF_HOME/selected-models/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/RVN-Q8_0-multilingual.gguf"
+SELECTED_FILE="$HF_HOME/selected-models/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/RVN-Q8_0-multilingual.gguf"
+test -s "$(dirname "$SELECTED_FILE")/.RVN-Q8_0-multilingual.gguf.complete"
 
 BEFORE="$(grep -c '^uvx ' "$TEST_LOG")"
 SKIP_OUTPUT="$(./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --download-only --config /dev/null)"
@@ -63,7 +66,22 @@ SKIP_OUTPUT="$(./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --download
 AFTER="$(grep -c '^uvx ' "$TEST_LOG")"
 test "$BEFORE" -eq "$AFTER"
 
+# A truncated file must not pass the completed-download cache check.
+printf x > "$SELECTED_FILE"
+./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --download-only --config /dev/null > /dev/null
+grep -q '^uvx hf download .* --force-download$' "$TEST_LOG"
+test "$(wc -c < "$SELECTED_FILE" | tr -d ' ')" = "$(cat "$(dirname "$SELECTED_FILE")/.RVN-Q8_0-multilingual.gguf.complete")"
+
 ./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --download-only --force-download --config /dev/null > /dev/null
 grep -q '^uvx hf download .* --force-download$' "$TEST_LOG"
+
+# Exercise the integrated setup phase with both image and selected file absent.
+rm -rf "$HF_HOME/selected-models"
+SETUP_BEFORE="$(grep -c '^uvx ' "$TEST_LOG")"
+./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --setup --config "$TEST_DIR/empty.env" > "$TEST_DIR/setup.out"
+SETUP_AFTER="$(grep -c '^uvx ' "$TEST_LOG")"
+test "$SETUP_AFTER" -eq "$((SETUP_BEFORE + 1))"
+grep -q '^docker build -t llama-node .* -f Dockerfile.llama ' "$TEST_LOG"
+grep -q '^uvx hf download 0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF RVN-Q8_0-multilingual.gguf --local-dir ' "$TEST_LOG"
 
 echo "GGUF recipe checks passed"

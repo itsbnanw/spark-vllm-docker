@@ -174,10 +174,17 @@ DOWNLOAD_START=$(date +%s)
 if [ -n "$MODEL_FILE" ]; then
     MODEL_DIR="${HF_HOME:-$HOME/.cache/huggingface}/selected-models/$MODEL_NAME"
     COPY_PARENT="${HF_HOME:-$HOME/.cache/huggingface}/selected-models/${MODEL_NAME%%/*}"
+    SELECTED_FILE="$MODEL_DIR/$MODEL_FILE"
+    COMPLETE_MARKER="$MODEL_DIR/.$MODEL_FILE.complete"
     DOWNLOAD_CMD=(uvx hf download "$MODEL_NAME" "$MODEL_FILE" --local-dir "$MODEL_DIR")
-    if [ "$FORCE_DOWNLOAD" = true ]; then
+    # A file left by an interrupted transfer is not a completed cache entry.
+    # Force the CLI to replace it; its own local metadata may otherwise skip it.
+    if [ "$FORCE_DOWNLOAD" = true ] || { [ -e "$SELECTED_FILE" ] && \
+        { [ ! -f "$COMPLETE_MARKER" ] || \
+          [ "$(wc -c < "$SELECTED_FILE" | tr -d ' ')" != "$(cat "$COMPLETE_MARKER")" ]; }; }; then
         DOWNLOAD_CMD+=(--force-download)
     fi
+    rm -f "$COMPLETE_MARKER"
 else
     DOWNLOAD_CMD=(uvx hf download "$MODEL_NAME")
 fi
@@ -220,6 +227,9 @@ else
         echo "Error: Selected model file is missing or empty: $MODEL_DIR/$MODEL_FILE" >&2
         exit 1
     fi
+    # Only mark completion after the exact-file CLI returns successfully.
+    wc -c < "$SELECTED_FILE" | tr -d ' ' > "$COMPLETE_MARKER.tmp.$$"
+    mv "$COMPLETE_MARKER.tmp.$$" "$COMPLETE_MARKER"
 fi
 
 if [ -z "$MODEL_DIR" ]; then

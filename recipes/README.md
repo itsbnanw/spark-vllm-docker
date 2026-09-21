@@ -55,6 +55,8 @@ GGUF. Later launches can omit `--setup`. The recipe runs on one Spark only;
 it does not download the vision projector or an MTP variant. The selected
 file is stored under `selected-models/` in the Hugging Face cache, which the
 launcher mounts into the container. `HF_HOME` controls the host cache root.
+The downloader records a completion marker beside the GGUF so an interrupted
+transfer is retried on the next `--setup` or `--download-only` run.
 
 ## Cluster Node Discovery
 
@@ -135,6 +137,7 @@ Options:
 
 ```yaml
 # Required fields
+recipe_version: "2"                # Version 1 remains supported for older recipes
 name: Human-readable name
 container: docker-image-name
 command: |
