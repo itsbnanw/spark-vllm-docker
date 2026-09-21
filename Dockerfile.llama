@@ -7,12 +7,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
+# The CUDA devel image has a libcuda.so link stub, while ggml-cuda's shared
+# library requests its libcuda.so.1 soname at the server link step.
 RUN git clone --depth 1 --branch "$LLAMA_CPP_REF" \
       https://github.com/ggml-org/llama.cpp.git /opt/llama.cpp && \
+    ln -s libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
     cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
       -DGGML_CUDA=ON \
       -DGGML_NATIVE=OFF \
       -DCMAKE_CUDA_ARCHITECTURES=121 \
+      -DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,/usr/local/cuda/lib64/stubs \
       -DLLAMA_BUILD_SERVER=ON \
       -DLLAMA_BUILD_TESTS=OFF \
       -DLLAMA_CURL=OFF && \
