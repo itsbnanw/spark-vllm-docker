@@ -20,6 +20,7 @@ WHISPER_ARGS=(
     "--dtype float16"
     "--tensor-parallel-size 1"
     "--max-num-seqs 2"
+    "--max-num-batched-tokens 3072"
     "--kv-cache-memory-bytes 2G"
 )
 # ==============================================================================

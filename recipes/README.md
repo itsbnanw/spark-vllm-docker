@@ -62,9 +62,12 @@ curl --fail http://localhost:8000/v1/audio/translations \
 
 The FP16 model weights are about 3.09 GB. `--kv-cache-memory-bytes 2G` sets
 aside 2 GiB for vLLM's KV cache, **not** a 2 GiB limit on total server memory;
-weights, activations, and other runtime buffers also use memory. This initial
-cache size targets one or two concurrent requests and should be checked against
-actual memory use on Spark. vLLM's default audio upload limit is 25 MB; set
+weights, activations, and other runtime buffers also use memory.
+`--max-num-batched-tokens 3072` gives the scheduler room for two 1,500-token
+audio items in one iteration. It is a token limit, not a memory allocation;
+larger batches can increase temporary memory use. These initial settings target
+one or two concurrent requests and should be checked against actual memory use
+on Spark. vLLM's default audio upload limit is 25 MB; set
 `VLLM_MAX_AUDIO_CLIP_FILESIZE_MB` with `-e` to change it.
 
 ### Heretic Qwen3.8 GGUF on one DGX Spark

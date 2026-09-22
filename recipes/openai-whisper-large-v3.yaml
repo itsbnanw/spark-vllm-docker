@@ -14,6 +14,7 @@ defaults:
   tensor_parallel: 1
   kv_cache_memory_bytes: 2G
   max_num_seqs: 2
+  max_num_batched_tokens: 3072
 
 command: |
   vllm serve openai/whisper-large-v3 \
@@ -22,4 +23,5 @@ command: |
     --dtype float16 \
     --tensor-parallel-size {tensor_parallel} \
     --max-num-seqs {max_num_seqs} \
+    --max-num-batched-tokens {max_num_batched_tokens} \
     --kv-cache-memory-bytes {kv_cache_memory_bytes}
