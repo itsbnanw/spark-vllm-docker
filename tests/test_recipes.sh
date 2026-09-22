@@ -1210,6 +1210,37 @@ verify_recipe_args() {
     fi
 }
 
+# Test: Whisper matches its documented command and memory settings.
+test_readme_whisper() {
+    verify_recipe_args "openai-whisper-large-v3" \
+        "$WHISPER_MODEL" \
+        "$WHISPER_CONTAINER" \
+        "${WHISPER_ARGS[@]}"
+
+    log_test "README match: Whisper audio mod and fixed memory budget"
+    local output
+    output=$("$PROJECT_DIR/run-recipe.py" openai-whisper-large-v3 \
+        --config /dev/null --dry-run --solo 2>&1)
+    if echo "$output" | grep -Fq -- "--apply-mod $WHISPER_MOD" && \
+       ! echo "$output" | grep -Fq -- '--gpu-memory-utilization'; then
+        log_pass "Whisper uses its audio mod and no GPU utilization percentage"
+    else
+        log_fail "Whisper mod or memory budget differs from documentation"
+        log_verbose "$output"
+    fi
+
+    log_test "Whisper rejects a two-node launch"
+    if output=$("$PROJECT_DIR/run-recipe.py" openai-whisper-large-v3 \
+        --config /dev/null --dry-run -n 10.0.0.1,10.0.0.2 2>&1); then
+        log_fail "Whisper unexpectedly accepted cluster mode"
+    elif echo "$output" | grep -Fq 'requires solo mode'; then
+        log_pass "Whisper rejects cluster mode"
+    else
+        log_fail "Whisper cluster rejection was unclear"
+        log_verbose "$output"
+    fi
+}
+
 # Test: glm-4.7-flash-awq matches README documentation
 test_readme_glm_flash_awq() {
     verify_recipe_args "glm-4.7-flash-awq" \
@@ -1643,6 +1674,7 @@ main() {
     
     # README documentation verification tests
     echo "--- README Documentation Verification (Solo Mode) ---"
+    test_readme_whisper
     test_readme_glm_flash_awq
     test_readme_gpt_oss
     test_readme_minimax

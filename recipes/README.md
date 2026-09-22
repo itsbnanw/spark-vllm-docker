@@ -29,6 +29,44 @@ Recipes provide a **one-click solution** for deploying models with pre-configure
 ./run-recipe.sh minimax-m2-awq --setup
 ```
 
+### Whisper large-v3 on one DGX Spark
+
+The [Whisper large-v3 recipe](openai-whisper-large-v3.yaml) serves audio
+transcription and translation to English. It runs on one Spark and processes
+up to two sequences at once. From the repository root:
+
+```bash
+./run-recipe.sh openai-whisper-large-v3 --solo --setup
+```
+
+`--setup` prepares the default `vllm-node` image and downloads the Hugging Face
+model. The recipe's `mods/whisper-audio` step installs Whisper's vLLM audio
+dependencies inside each fresh container; it needs package-network access if
+they are missing. Later launches can omit `--setup`. The repository downloader
+fetches the whole Hugging Face snapshot, including other checkpoint formats,
+so disk use exceeds the FP16 weight size below.
+
+After the server is ready, use a second terminal and an audio file on the
+client machine:
+
+```bash
+curl --fail http://localhost:8000/health
+curl --fail http://localhost:8000/v1/models
+curl --fail http://localhost:8000/v1/audio/transcriptions \
+  -F 'file=@/path/to/audio.wav' \
+  -F 'model=openai/whisper-large-v3'
+curl --fail http://localhost:8000/v1/audio/translations \
+  -F 'file=@/path/to/non-english-audio.wav' \
+  -F 'model=openai/whisper-large-v3'
+```
+
+The FP16 model weights are about 3.09 GB. `--kv-cache-memory-bytes 2G` sets
+aside 2 GiB for vLLM's KV cache, **not** a 2 GiB limit on total server memory;
+weights, activations, and other runtime buffers also use memory. This initial
+cache size targets one or two concurrent requests and should be checked against
+actual memory use on Spark. vLLM's default audio upload limit is 25 MB; set
+`VLLM_MAX_AUDIO_CLIP_FILESIZE_MB` with `-e` to change it.
+
 ### Heretic Qwen3.8 GGUF on one DGX Spark
 
 This recipe builds a CUDA-enabled llama.cpp image, downloads only

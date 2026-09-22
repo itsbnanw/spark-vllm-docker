@@ -8,6 +8,21 @@
 # When updating recipes, update both README.md and this file
 
 # ==============================================================================
+# openai-whisper-large-v3
+# recipes/README.md: Whisper large-v3 on one DGX Spark
+# ==============================================================================
+WHISPER_MODEL="openai/whisper-large-v3"
+WHISPER_CONTAINER="vllm-node"
+WHISPER_MOD="mods/whisper-audio"
+WHISPER_ARGS=(
+    "--host 0.0.0.0"
+    "--port 8000"
+    "--dtype float16"
+    "--tensor-parallel-size 1"
+    "--max-num-seqs 2"
+    "--kv-cache-memory-bytes 2G"
+)
+# ==============================================================================
 # glm-4.7-flash-awq
 # README Reference: Lines 186-198 (solo) and 203-218 (cluster)
 # ==============================================================================
