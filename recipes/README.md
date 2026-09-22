@@ -99,6 +99,45 @@ launcher mounts into the container. `HF_HOME` controls the host cache root.
 The downloader records a completion marker beside the GGUF so an interrupted
 transfer is retried on the next `--setup` or `--download-only` run.
 
+### HauhauCS Aggressive Qwen3.8 Q8_K_P GGUF on one DGX Spark
+
+This text-chat recipe downloads only
+`Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q8_K_P.gguf` (about 31.46 GB)
+and uses its embedded MTP head with the CUDA-enabled `llama-node` image.
+It uses the distinct container name `llama_hauhaucs_node`, but shares port
+8000 with the Heretic recipe. If the Heretic server is running, stop it first:
+
+```bash
+./launch-cluster.sh --solo --name llama_node stop
+```
+
+Then launch the new recipe from the repository root on the Spark:
+
+```bash
+./run-recipe.sh qwen3.8-27b-hauhaucs-aggressive-q8-gguf --solo --setup
+```
+
+Once the server has loaded, check the OpenAI-compatible API from another
+terminal:
+
+```bash
+curl --fail http://localhost:8000/health
+curl --fail http://localhost:8000/v1/models
+curl --fail http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3.8-27b-hauhaucs-aggressive-q8","messages":[{"role":"user","content":"Hello!"}]}'
+```
+
+The GGUF is stored at
+`${HF_HOME:-$HOME/.cache/huggingface}/selected-models/HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q8_K_P.gguf`
+on the host. The launcher mounts that cache root into the container. This
+recipe serves text only and does not download the separate FastMTP sidecar or
+vision projector. Its default context is 32768 tokens; use `--max-model-len`
+to change it. Later launches can omit `--setup`.
+
+If an existing `llama-node` image predates the pinned llama.cpp build with
+embedded MTP support, use `--setup --force-build` once to rebuild it.
+
 ## Cluster Node Discovery
 
 Autodiscovery is the default way to configure cluster nodes:

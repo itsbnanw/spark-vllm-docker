@@ -1,5 +1,5 @@
 #!/bin/bash
-# Focused, offline checks for the solo GGUF recipe and its selective download.
+# Focused, offline checks for solo GGUF recipes and selective downloads.
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -42,6 +42,18 @@ DRY_RUN="$(./run-recipe.sh qwen3.8-27b-heretic-rvn-q8-gguf --solo --setup --dry-
 [[ "$DRY_RUN" == *"MODEL_PATH=/root/.cache/huggingface/selected-models/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/RVN-Q8_0-multilingual.gguf"* ]]
 [[ "$DRY_RUN" == *"--ctx-size 32768"* ]]
 [[ "$DRY_RUN" == *"--n-gpu-layers 99"* ]]
+
+HAUHAU_DRY_RUN="$(./run-recipe.sh qwen3.8-27b-hauhaucs-aggressive-q8-gguf --solo --dry-run --config /dev/null)"
+[[ "$HAUHAU_DRY_RUN" == *"Model file: Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q8_K_P.gguf"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--name llama_hauhaucs_node"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"MODEL_PATH=/root/.cache/huggingface/selected-models/HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q8_K_P.gguf"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--ctx-size 32768"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--parallel 1"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--flash-attn on"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--jinja"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--reasoning on"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--spec-type draft-mtp"* ]]
+[[ "$HAUHAU_DRY_RUN" == *"--spec-draft-n-max 2"* ]]
 
 ./build-and-copy.sh --llama-cpp -t llama-node > /dev/null
 grep -q '^docker build -t llama-node .* -f Dockerfile.llama ' "$TEST_LOG"
