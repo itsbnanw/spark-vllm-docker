@@ -299,6 +299,22 @@ for additional launcher options.
 
 ## CHANGELOG
 
+### 2026-09-23
+
+#### Qwen3.8-27B-FP8 recipe
+
+Added a recipe for serving the official `Qwen/Qwen3.8-27B-FP8` checkpoint with
+FP8 KV cache and its embedded MTP draft head. It uses the model's native
+262144-token context window and supports both single- and dual-Spark launches.
+
+```bash
+# Single DGX Spark
+./run-recipe.sh qwen3.8-27b-fp8 --solo --setup
+
+# Dual DGX Spark cluster
+./run-recipe.sh qwen3.8-27b-fp8 --setup
+```
+
 ### 2026-09-10
 
 #### Qwen3.8 Flash Next solo PLE disk offload
